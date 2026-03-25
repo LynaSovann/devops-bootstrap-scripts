@@ -1,20 +1,39 @@
+#!/bin/bash
+
+exec > /var/log/user-data.log 2>&1
+set -x
+
+sleep 10
+
+apt-get update -y
+apt-get install -y wget tar
+
+cd /tmp
 
 wget https://dl.grafana.com/grafana-enterprise/release/12.4.1/grafana-enterprise_12.4.1_22846628243_linux_amd64.tar.gz
 
 tar -zxvf grafana-enterprise_12.4.1_22846628243_linux_amd64.tar.gz
 
-sudo useradd -r -s /bin/false grafana
+# -------- USER --------
+id -u grafana || useradd -r -s /bin/false grafana
 
- mkdir /usr/local/grafana
+# -------- INSTALL --------
+mkdir -p /usr/local/grafana
+cp -r grafana-12.4.1/* /usr/local/grafana/
 
- sudo mv grafana-12.4.1/* /usr/local/grafana/
-sudo chown -R grafana:users /usr/local/grafana
+# -------- CONFIG --------
+cp /usr/local/grafana/conf/sample.ini /usr/local/grafana/conf/grafana.ini
 
-sudo touch /etc/systemd/system/grafana-server.service
+# -------- CREATE REQUIRED DIRS (THIS IS THE KEY FIX) --------
+mkdir -p /usr/local/grafana/data
+mkdir -p /usr/local/grafana/log
+mkdir -p /usr/local/grafana/plugins
 
-vim /etc/systemd/system/grafana-server.service
+# -------- PERMISSIONS --------
+chown -R grafana:grafana /usr/local/grafana
 
-# add this 
+# -------- SYSTEMD --------
+cat <<EOF > /etc/systemd/system/grafana-server.service
 [Unit]
 Description=Grafana Server
 After=network.target
@@ -22,43 +41,19 @@ After=network.target
 [Service]
 Type=simple
 User=grafana
-Group=users
-ExecStart=/usr/local/grafana/bin/grafana server --config=/usr/local/grafana/conf/grafana.ini --homepath=/usr/local/grafana
+Group=grafana
+ExecStart=/usr/local/grafana/bin/grafana server \
+  --config=/usr/local/grafana/conf/grafana.ini \
+  --homepath=/usr/local/grafana
 Restart=on-failure
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+PrivateUsers=false
 
 [Install]
 WantedBy=multi-user.target
+EOF
 
-## 
-
-cd /usr/local/grafana/conf
-sudo cp sample.ini grafana.ini
-
-/usr/local/grafana/bin/grafana server --homepath /usr/local/grafana
-
-ctrl + c
-
-sudo chown -R grafana:users /usr/local/grafana
-
-#Configure the Grafana server to start at boot using systemd
-sudo systemctl enable grafana-server.service
-
-sudo EDITOR=vim systemctl edit grafana-server.service
-
-## add this
-[Service]
-# Give the CAP_NET_BIND_SERVICE capability
-CapabilityBoundingSet=CAP_NET_BIND_SERVICE
-AmbientCapabilities=CAP_NET_BIND_SERVICE
-
-# A private user cannot have process capabilities on the host's user
-# namespace and thus CAP_NET_BIND_SERVICE has no effect.
-PrivateUsers=false
-
-## 
-
-sudo systemctl daemon-reload
-sudo systemctl enable grafana-server
-sudo systemctl restart grafana-server
-
-
+systemctl daemon-reload
+systemctl enable grafana-server
+systemctl restart grafana-server
