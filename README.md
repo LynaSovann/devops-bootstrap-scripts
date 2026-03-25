@@ -5,3 +5,4 @@
 - Sonarqube Setup : https://github.com/hkhcoder/vprofile-project/blob/atom/userdata/sonar-setup.sh
 - Grafana Setup : https://grafana.com/docs/grafana/latest/setup-grafana/installation/debian/
 - Prometheus Setup : https://www.cherryservers.com/blog/install-prometheus-ubuntu-2404
+- Loki setup : https://github.com/iamjjchang/Install-Loki-on-Ubuntu/blob/master/README.md
