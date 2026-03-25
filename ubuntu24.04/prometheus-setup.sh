@@ -1,34 +1,56 @@
-sudo  apt update
+#!/bin/bash
 
-sudo groupadd --system prometheus
+# -------- LOGGING --------
+exec > /var/log/user-data-prometheus.log 2>&1
+set -x
 
-sudo useradd -s /sbin/nologin --system -g prometheus prometheus
+# -------- WAIT FOR NETWORK --------
+sleep 10
 
-sudo mkdir /etc/prometheus
+# -------- UPDATE --------
+apt-get update -y
+apt-get install -y wget tar
 
-sudo mkdir /var/lib/prometheus
-wget https://github.com/prometheus/prometheus/releases/download/v2.55.1/prometheus-2.55.1.linux-amd64.tar.gz
+# -------- VARIABLES --------
+VERSION="2.55.1"
+FILE="prometheus-${VERSION}.linux-amd64.tar.gz"
+DIR="prometheus-${VERSION}.linux-amd64"
 
+cd /tmp
 
-tar xvf prometheus-2.55.1.linux-*
+# -------- DOWNLOAD --------
+wget https://github.com/prometheus/prometheus/releases/download/v${VERSION}/${FILE}
 
-sudo mv prometheus-2.55.1.linux-amd64/prometheus /usr/local/bin/
-sudo mv prometheus-2.55.1.linux-amd64/promtool /usr/local/bin/
+# -------- EXTRACT --------
+tar -xvf ${FILE}
 
-sudo chown -R  prometheus:prometheus /usr/local/bin/prometheus
-sudo chown -R  prometheus:prometheus /usr/local/bin/promtool
+# -------- CREATE USER --------
+getent group prometheus || groupadd --system prometheus
+id -u prometheus || useradd -s /sbin/nologin --system -g prometheus prometheus
 
-sudo mv prometheus-2.55.1.linux-amd64/consoles /etc/prometheus
-sudo mv prometheus-2.55.1.linux-amd64/console_libraries /etc/prometheus
+# -------- CREATE DIRECTORIES --------
+mkdir -p /etc/prometheus
+mkdir -p /var/lib/prometheus
 
-sudo mv prometheus-2.55.1.linux-amd64/prometheus.yml /etc/prometheus
+# -------- INSTALL BINARIES --------
+cp ${DIR}/prometheus /usr/local/bin/
+cp ${DIR}/promtool /usr/local/bin/
 
-sudo chown -R prometheus:prometheus /etc/prometheus
-sudo chown -R prometheus:prometheus /var/lib/prometheus
+# -------- SET PERMISSIONS --------
+chown prometheus:prometheus /usr/local/bin/prometheus
+chown prometheus:prometheus /usr/local/bin/promtool
 
-sudo vim /etc/systemd/system/prometheus.service
+# -------- CONFIG FILES --------
+cp -r ${DIR}/consoles /etc/prometheus
+cp -r ${DIR}/console_libraries /etc/prometheus
+cp ${DIR}/prometheus.yml /etc/prometheus
 
-## 
+# -------- PERMISSIONS --------
+chown -R prometheus:prometheus /etc/prometheus
+chown -R prometheus:prometheus /var/lib/prometheus
+
+# -------- CREATE SYSTEMD SERVICE --------
+cat <<EOF > /etc/systemd/system/prometheus.service
 [Unit]
 Description=Prometheus
 Wants=network-online.target
@@ -40,28 +62,24 @@ Group=prometheus
 Type=simple
 Restart=on-failure
 RestartSec=5s
-ExecStart=/usr/local/bin/prometheus \
-    --config.file /etc/prometheus/prometheus.yml \
-    --storage.tsdb.path /var/lib/prometheus/ \
-    --web.console.templates=/etc/prometheus/consoles \
-    --web.console.libraries=/etc/prometheus/console_libraries \
-    --web.listen-address=0.0.0.0:9090 \
-    --web.enable-lifecycle \
+ExecStart=/usr/local/bin/prometheus \\
+    --config.file=/etc/prometheus/prometheus.yml \\
+    --storage.tsdb.path=/var/lib/prometheus/ \\
+    --web.console.templates=/etc/prometheus/consoles \\
+    --web.console.libraries=/etc/prometheus/console_libraries \\
+    --web.listen-address=0.0.0.0:9090 \\
+    --web.enable-lifecycle \\
     --log.level=info
 
 [Install]
 WantedBy=multi-user.target
+EOF
 
-## 
-sudo systemctl daemon-reload
+# -------- START SERVICE --------
+systemctl daemon-reload
+systemctl enable prometheus
+systemctl restart prometheus
 
-sudo systemctl start prometheus
-
-sudo systemctl enable prometheus
-
-sudo systemctl status prometheus
-
-
-
-
-
+# -------- VERIFY --------
+sleep 5
+systemctl status prometheus --no-pager
